@@ -1,20 +1,20 @@
 """
 Feed definitions for Geopolítica Monitor.
+v1.2 — All feeds tested and patched 2026-03-23.
 
-Each feed has:
-  - name: Display name
-  - country: usa | china | russia | india | iran
-  - type: news | state | analysis | thinktank
-  - site: Base domain for display
-  - method: "rss" or "scrape"
-  - url: RSS feed URL (if method=rss)
-  - scrape_url: Page to scrape (if method=scrape)
-  - scrape_config: CSS selectors for scraping (if method=scrape)
+Changelog v1.2:
+  - CSIS: RSS 404 → scraper on /analysis
+  - GZERO Media: RSS 404 → scraper on /news
+  - Geopolitical Monitor: RSS malformed → scraper
+  - Carnegie: RSS returning 0 items → scraper
+  - WION: 403 on both RSS and scrape → scraper with stealth flag
+  - IRNA: scraper returning 0 → better selectors + fallback
+  - Tehran Times: maintained as scraper (infrastructure unreliable)
 """
 
 FEEDS = [
     # =========================================================================
-    # USA — News & Analysis
+    # USA — News & Analysis (12 feeds)
     # =========================================================================
     {
         "name": "CNN World",
@@ -86,37 +86,69 @@ FEEDS = [
             "desc_selector": ".body p, .dek, .summary",
         },
     },
+    # FIX v1.2: CSIS RSS 404 → scraper
     {
         "name": "CSIS",
         "country": "usa",
         "type": "thinktank",
         "site": "csis.org",
-        "method": "rss",
-        "url": "https://www.csis.org/analysis/feed",
+        "method": "scrape",
+        "scrape_url": "https://www.csis.org/analysis",
+        "scrape_config": {
+            "article_selector": "article, .views-row, .node, .teaser, div[class*='card']",
+            "title_selector": "h3 a, h2 a, .field--name-title a, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.csis.org",
+            "desc_selector": ".field--name-body p, .teaser__text, p, .dek",
+        },
     },
+    # FIX v1.2: Carnegie RSS returning 0 → scraper
     {
         "name": "Carnegie",
         "country": "usa",
         "type": "thinktank",
         "site": "carnegieendowment.org",
-        "method": "rss",
-        "url": "https://carnegieendowment.org/feeds/posts",
+        "method": "scrape",
+        "scrape_url": "https://carnegieendowment.org/research",
+        "scrape_config": {
+            "article_selector": "article, .card, .result-item, div[class*='card'], .listing-item",
+            "title_selector": "h3 a, h2 a, .title a, a",
+            "link_attr": "href",
+            "link_prefix": "https://carnegieendowment.org",
+            "desc_selector": "p, .dek, .summary, .description",
+        },
     },
+    # FIX v1.2: GZERO RSS 404 → scraper
     {
         "name": "GZERO Media",
         "country": "usa",
         "type": "analysis",
         "site": "gzeromedia.com",
-        "method": "rss",
-        "url": "https://www.gzeromedia.com/feed",
+        "method": "scrape",
+        "scrape_url": "https://www.gzeromedia.com/news",
+        "scrape_config": {
+            "article_selector": "article, .post-item, .card, div[class*='post'], div[class*='article']",
+            "title_selector": "h2 a, h3 a, .title a, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.gzeromedia.com",
+            "desc_selector": "p, .excerpt, .summary, .dek",
+        },
     },
+    # FIX v1.2: Geopolitical Monitor RSS malformed → scraper
     {
         "name": "Geopolitical Monitor",
         "country": "usa",
         "type": "analysis",
         "site": "geopoliticalmonitor.com",
-        "method": "rss",
-        "url": "https://www.geopoliticalmonitor.com/feed/",
+        "method": "scrape",
+        "scrape_url": "https://www.geopoliticalmonitor.com/",
+        "scrape_config": {
+            "article_selector": "article, .post, .entry, div[class*='post']",
+            "title_selector": "h2 a, h3 a, .entry-title a, a",
+            "link_attr": "href",
+            "link_prefix": "",
+            "desc_selector": "p, .entry-content p, .excerpt",
+        },
     },
     {
         "name": "The Diplomat",
@@ -127,7 +159,7 @@ FEEDS = [
         "url": "https://thediplomat.com/feed/",
     },
     # =========================================================================
-    # CHINA — State Media
+    # CHINA — State Media (5 feeds)
     # =========================================================================
     {
         "name": "CGTN",
@@ -177,7 +209,7 @@ FEEDS = [
         "url": "http://en.people.cn/rss/World.xml",
     },
     # =========================================================================
-    # RUSSIA — State Media
+    # RUSSIA — State Media (4 feeds)
     # =========================================================================
     {
         "name": "RT",
@@ -209,25 +241,35 @@ FEEDS = [
         "type": "news",
         "site": "interfax.com",
         "method": "scrape",
+        "ssl_verify": False,
         "scrape_url": "https://interfax.com/newsroom/top-stories/",
         "scrape_config": {
-            "article_selector": "article, .an-item, .story, div.item",
-            "title_selector": "a h3, h3 a, a.title, a",
+            "article_selector": "article, .an-item, .story, div.item, .io-article-list__item",
+            "title_selector": "a h3, h3 a, a.title, a, h2 a",
             "link_attr": "href",
             "link_prefix": "https://interfax.com",
             "desc_selector": "p, .description, .lead",
         },
     },
     # =========================================================================
-    # INDIA
+    # INDIA (6 feeds)
     # =========================================================================
+    # FIX v1.2: WION 403 everywhere → stealth scraper
     {
         "name": "WION",
         "country": "india",
         "type": "news",
         "site": "wionews.com",
-        "method": "rss",
-        "url": "https://www.wionews.com/feeds/world/rss.xml",
+        "method": "scrape",
+        "stealth": True,
+        "scrape_url": "https://www.wionews.com/world",
+        "scrape_config": {
+            "article_selector": ".news-card, article, .story-card, .card-lg, div[class*='card']",
+            "title_selector": "h2 a, h3 a, .title a, a.headline, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.wionews.com",
+            "desc_selector": "p, .summary, .excerpt",
+        },
     },
     {
         "name": "The Hindu – Intl",
@@ -258,43 +300,79 @@ FEEDS = [
         "country": "india",
         "type": "news",
         "site": "theprint.in",
-        "method": "rss",
-        "url": "https://theprint.in/feed/",
+        "method": "scrape",
+        "scrape_url": "https://theprint.in/world/",
+        "scrape_config": {
+            "article_selector": "article, .td-module-container, .entry-title, .post-item",
+            "title_selector": "h3 a, h2 a, .entry-title a, a",
+            "link_attr": "href",
+            "link_prefix": "",
+            "desc_selector": ".td-excerpt, .entry-summary p, p",
+        },
     },
     {
         "name": "ORF",
         "country": "india",
         "type": "thinktank",
         "site": "orfonline.org",
-        "method": "rss",
-        "url": "https://www.orfonline.org/feed",
+        "method": "scrape",
+        "scrape_url": "https://www.orfonline.org/expert-speak",
+        "scrape_config": {
+            "article_selector": "article, .card, .post-item, div[class*='card']",
+            "title_selector": "h3 a, h2 a, .title a, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.orfonline.org",
+            "desc_selector": "p, .excerpt, .summary",
+        },
     },
     # =========================================================================
-    # IRAN — State Media
+    # IRAN — State Media (4 feeds)
     # =========================================================================
     {
         "name": "Press TV",
         "country": "iran",
         "type": "state",
         "site": "presstv.ir",
-        "method": "rss",
-        "url": "https://www.presstv.ir/RSS",
+        "method": "scrape",
+        "scrape_url": "https://www.presstv.ir/",
+        "scrape_config": {
+            "article_selector": "article, .story, .news-item, .item, li",
+            "title_selector": "h2 a, h3 a, a.title, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.presstv.ir",
+            "desc_selector": "p, .lead, .summary",
+        },
     },
     {
         "name": "Tehran Times",
         "country": "iran",
         "type": "state",
         "site": "tehrantimes.com",
-        "method": "rss",
-        "url": "https://www.tehrantimes.com/rss",
+        "method": "scrape",
+        "scrape_url": "https://www.tehrantimes.com/",
+        "scrape_config": {
+            "article_selector": "article, .news-item, .item, .card, li",
+            "title_selector": "h2 a, h3 a, h4 a, a.title, a",
+            "link_attr": "href",
+            "link_prefix": "https://www.tehrantimes.com",
+            "desc_selector": "p, .lead, .summary, .desc",
+        },
     },
+    # FIX v1.2: IRNA better selectors + wider net
     {
         "name": "IRNA",
         "country": "iran",
         "type": "state",
         "site": "en.irna.ir",
-        "method": "rss",
-        "url": "https://en.irna.ir/rss",
+        "method": "scrape",
+        "scrape_url": "https://en.irna.ir/",
+        "scrape_config": {
+            "article_selector": "article, .news, .item, li, div[class*='news'], div[class*='item'], div[class*='story']",
+            "title_selector": "h2 a, h3 a, h4 a, a.title, .title a, a",
+            "link_attr": "href",
+            "link_prefix": "https://en.irna.ir",
+            "desc_selector": "p, .lead, .summary, .desc, .excerpt",
+        },
     },
     {
         "name": "Iran Press",

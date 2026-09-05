@@ -16,11 +16,26 @@ services:
       - FLASK_PORT=5000
     ports:
       - "5000:5000"                # expose API for dev; remove in prod
+    # ── DNS ──
+    # The host /etc/resolv.conf is managed by Tailscale (100.100.100.100) and Docker
+    # gives containers no usable external upstream, so ALL feed lookups fail. Point
+    # container DNS at the local Pi-hole (host network, port 53).
+    # Override with:  PIHOLE_DNS=<ip>  in .env / shell env
+    dns:
+      - ${PIHOLE_DNS:-192.168.1.80}
+    # ── gunicorn ──
+    # NOTE: do NOT use --preload here. wsgi:app runs start_scheduler() (APScheduler
+    # threads) at import time; with --preload those threads run in the master and the
+    # worker forks while they hold locks -> worker deadlocks and the API hangs forever.
+    # Without --preload the worker imports the app itself (single worker -> no fork).
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "120", "wsgi:app"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      # The image has no curl; use Python's stdlib instead.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health',timeout=5).status==200 else 1)"]
       interval: 60s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
   # ── Frontend: React SPA via nginx ──
   frontend:
@@ -28,7 +43,7 @@ services:
     container_name: geopol-frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8880:80"
     depends_on:
       - backend
 

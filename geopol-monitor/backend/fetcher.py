@@ -1,9 +1,10 @@
 """
-Dual-engine fetcher:
+Dual-engine fetcher v1.2:
   1. RSS/Atom parser via feedparser
-  2. HTML scraper via requests + BeautifulSoup for sites without RSS
+  2. HTML scraper via requests + BeautifulSoup
+  3. Stealth mode for bot-blocking sites (WION, etc.)
 
-Includes retry logic, user-agent rotation, and rate limiting.
+Includes retry logic, user-agent rotation, SSL bypass, and rate limiting.
 """
 
 import logging
@@ -18,6 +19,9 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 from db import upsert_article, update_feed_status, log_fetch
 
 logger = logging.getLogger("fetcher")
@@ -29,17 +33,39 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
 ]
 
-REQUEST_TIMEOUT = 20
+# More convincing headers for sites with aggressive bot detection
+STEALTH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
+    "sec-ch-ua": '"Chromium";v="125", "Not.A/Brand";v="24", "Google Chrome";v="125"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+}
+
+REQUEST_TIMEOUT = 25
 MAX_WORKERS = 6
 
 
-def _session():
+def _session(stealth=False):
     s = requests.Session()
-    s.headers.update({
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-    })
+    if stealth:
+        s.headers.update(STEALTH_HEADERS)
+    else:
+        s.headers.update({
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+        })
     return s
 
 
@@ -78,7 +104,8 @@ def fetch_rss(feed: dict) -> list:
 
     try:
         session = _session()
-        resp = session.get(url, timeout=REQUEST_TIMEOUT)
+        verify = feed.get("ssl_verify", True)
+        resp = session.get(url, timeout=REQUEST_TIMEOUT, verify=verify)
         resp.raise_for_status()
         parsed = feedparser.parse(resp.content)
 
@@ -91,11 +118,18 @@ def fetch_rss(feed: dict) -> list:
             if not title:
                 continue
 
+            # Opcional: quitar sufijo repetido del editor (p. ej. " - The National Interest")
+            suffix = feed.get("strip_title_suffix")
+            if suffix and title.endswith(suffix):
+                title = title[: -len(suffix)].rstrip()
+
             link = getattr(entry, "link", "")
-            desc = _clean_text(
-                getattr(entry, "summary", "")
-                or getattr(entry, "description", "")
-            )
+            desc = ""
+            if feed.get("include_description", True):
+                desc = _clean_text(
+                    getattr(entry, "summary", "")
+                    or getattr(entry, "description", "")
+                )
 
             articles.append({
                 "title": title,
@@ -124,11 +158,24 @@ def fetch_scrape(feed: dict) -> list:
     """Scrape headlines from a page using CSS selectors. Returns article dicts."""
     scrape_url = feed["scrape_url"]
     config = feed["scrape_config"]
-    logger.info(f"[SCRAPE] Fetching {feed['name']} — {scrape_url}")
+    stealth = feed.get("stealth", False)
+    logger.info(f"[SCRAPE{'·STEALTH' if stealth else ''}] Fetching {feed['name']} — {scrape_url}")
 
     try:
-        session = _session()
-        resp = session.get(scrape_url, timeout=REQUEST_TIMEOUT)
+        session = _session(stealth=stealth)
+        verify = feed.get("ssl_verify", True)
+
+        # For stealth mode: first hit the homepage to get cookies, then target page
+        if stealth:
+            base_url = f"{urlparse(scrape_url).scheme}://{urlparse(scrape_url).netloc}/"
+            try:
+                session.get(base_url, timeout=10, verify=verify)
+                time.sleep(random.uniform(0.5, 1.5))
+            except Exception:
+                pass
+            session.headers["Referer"] = base_url
+
+        resp = session.get(scrape_url, timeout=REQUEST_TIMEOUT, verify=verify)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.content, "html.parser")
 
@@ -183,7 +230,7 @@ def fetch_scrape(feed: dict) -> list:
                 "method": "scrape",
             })
 
-        # Strategy 2: If no containers found, try broad headline extraction
+        # Strategy 2: Fallback — broad headline extraction
         if not articles:
             logger.info(f"[SCRAPE] Fallback strategy for {feed['name']}")
             for link_el in soup.select("a[href]"):
@@ -193,9 +240,16 @@ def fetch_scrape(feed: dict) -> list:
                 if text.lower() in seen_titles:
                     continue
 
-                # Heuristic: skip nav/footer links
+                # Skip nav/footer links
                 parent_tags = [p.name for p in link_el.parents]
                 if "nav" in parent_tags or "footer" in parent_tags:
+                    continue
+                # Skip common non-article link patterns
+                lower = text.lower()
+                skip_words = ["subscribe", "sign in", "log in", "cookie", "privacy",
+                              "terms of", "contact us", "about us", "advertise",
+                              "copyright", "all rights"]
+                if any(sw in lower for sw in skip_words):
                     continue
 
                 seen_titles.add(text.lower())

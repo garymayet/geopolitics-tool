@@ -391,4 +391,15 @@ FEEDS = [
         "method": "rss",
         "url": "https://iranpress.com/rss",
     },
+    # =========================================================================
+    # QATAR — News (1 feed)
+    # =========================================================================
+    {
+        "name": "Al Jazeera English",
+        "country": "qatar",
+        "type": "news",
+        "site": "aljazeera.com",
+        "method": "rss",
+        "url": "https://www.aljazeera.com/xml/rss/all.xml",
+    },
 ]

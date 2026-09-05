@@ -13,6 +13,7 @@ const COUNTRIES = [
   { id: "russia",  label: "Rusia",        icon: "🇷🇺", color: "#FBBF24" },
   { id: "india",   label: "India",        icon: "🇮🇳", color: "#FB923C" },
   { id: "iran",    label: "Irán",         icon: "🇮🇷", color: "#34D399" },
+  { id: "qatar",   label: "Qatar",        icon: "🇶🇦", color: "#8B5CF6" },
 ];
 
 const TYPES = [

@@ -45,7 +45,7 @@ El scraper tiene dos estrategias:
 
 ---
 
-## Fuentes configuradas (31 feeds)
+## Fuentes configuradas (32 feeds)
 
 ### 🇺🇸 USA (12)
 | Fuente | Tipo | Motor |
@@ -97,6 +97,11 @@ El scraper tiene dos estrategias:
 | Tehran Times | Estatal | RSS |
 | IRNA | Estatal | RSS |
 | Iran Press | Estatal | RSS |
+
+### 🇶🇦 Qatar (1)
+| Fuente | Tipo | Motor |
+|--------|------|-------|
+| Al Jazeera English | Noticias | RSS |
 
 ---
 
